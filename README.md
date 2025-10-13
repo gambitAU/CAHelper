@@ -1,2 +1,1 @@
-# Example
-An example greeter plugin
+The CA Helper plugin exists to help people who want to reach a combat tier but are overwhelmed where to start, this plugin makes use of the wikisync function so make sure that you have the wikisync plugin active as well. 
