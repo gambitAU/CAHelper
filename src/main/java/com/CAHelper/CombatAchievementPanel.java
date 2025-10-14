@@ -85,70 +85,91 @@ public class CombatAchievementPanel extends PluginPanel
     {
         for (RoutingAlgorithm.BossRecommendation rec : recommendations)
         {
-            JPanel bossHeader = createBossHeader(rec);
-            tasksContainer.add(bossHeader);
-            tasksContainer.add(Box.createVerticalStrut(5));
+            // Parent panel for this boss
+            JPanel bossPanel = new JPanel();
+            bossPanel.setLayout(new BoxLayout(bossPanel, BoxLayout.Y_AXIS));
+            bossPanel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(Color.LIGHT_GRAY),
+                    new EmptyBorder(5, 5, 5, 5)
+            ));
+
+            // Header
+            JPanel headerPanel = createBossHeaderWithToggle(rec, bossPanel);
+            bossPanel.add(headerPanel);
+
+            // Task list
+            JPanel taskListPanel = new JPanel();
+            taskListPanel.setLayout(new BoxLayout(taskListPanel, BoxLayout.Y_AXIS));
+            taskListPanel.setBorder(new EmptyBorder(5, 20, 5, 5));
 
             List<RoutingAlgorithm.CombatAchievement> topTasks = rec.getTopEasiestTasks(5);
             for (RoutingAlgorithm.CombatAchievement task : topTasks)
             {
-                JPanel taskPanel = createTaskPanel(
+                JLabel taskLabel = new JLabel(String.format(
+                        "• %s (%s • %d pts)",
                         task.getName(),
-                        task.getDifficulty().toString(),
-                        String.format("%d pts (%.1f%% complete)",
-                                task.getPoints(),
-                                task.getCompletionRate())
-                );
-                tasksContainer.add(taskPanel);
-                tasksContainer.add(Box.createVerticalStrut(3));
+                        task.getDifficulty(),
+                        task.getPoints()
+                ));
+                taskListPanel.add(taskLabel);
             }
 
-            tasksContainer.add(Box.createVerticalStrut(10));
+            // Store for toggle access
+            taskListPanel.setName("taskListPanel");
+            bossPanel.putClientProperty("taskListPanel", taskListPanel);
+
+            bossPanel.add(taskListPanel);
+            tasksContainer.add(bossPanel);
+            tasksContainer.add(Box.createVerticalStrut(8));
         }
     }
 
-    private JPanel createBossHeader(RoutingAlgorithm.BossRecommendation rec)
+    private JPanel createBossHeaderWithToggle(RoutingAlgorithm.BossRecommendation rec, JPanel parentBossPanel)
     {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(70, 130, 180), 2),
-                new EmptyBorder(8, 8, 8, 8)
-        ));
-        panel.setBackground(new Color(240, 248, 255));
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(new Color(245, 245, 245));
+        headerPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
 
-        JLabel nameLabel = new JLabel(String.format("<html><b>%s</b></html>", rec.getBossName()));
-        nameLabel.setFont(new Font("Dialog", Font.BOLD, 16));
-        panel.add(nameLabel, BorderLayout.NORTH);
+        // Toggle button
+        JToggleButton toggleButton = new JToggleButton("▼");
+        toggleButton.setBorderPainted(false);
+        toggleButton.setContentAreaFilled(false);
+        toggleButton.setFocusPainted(false);
+        toggleButton.setPreferredSize(new Dimension(30, 20));
 
-        JLabel statsLabel = new JLabel(String.format(
-                "<html><font color='gray'>%d tasks • %.1f%% avg • %d points • Score: %.0f</font></html>",
+        // Boss name
+        JLabel nameLabel = new JLabel(rec.getBossName());
+        nameLabel.setFont(new Font("Dialog", Font.BOLD, 14));
+
+        // Stats
+        String statsText = String.format("[%d tasks • %d pts]",
                 rec.getAvailableTasks().size(),
-                rec.getAvgCompletionRate(),
-                rec.getTotalPoints(),
-                rec.getEfficiencyScore()
-        ));
-        panel.add(statsLabel, BorderLayout.SOUTH);
+                rec.getTotalPoints());
 
-        return panel;
-    }
+        JLabel statsLabel = new JLabel(statsText);
+        statsLabel.setFont(new Font("Dialog", Font.PLAIN, 12));
+        statsLabel.setForeground(Color.GRAY);
 
-    private JPanel createTaskPanel(String name, String difficulty, String points)
-    {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BorderLayout());
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Color.GRAY),
-                new EmptyBorder(5, 5, 5, 5)
-        ));
+        headerPanel.add(toggleButton, BorderLayout.WEST);
+        headerPanel.add(nameLabel, BorderLayout.CENTER);
+        headerPanel.add(statsLabel, BorderLayout.EAST);
 
-        JLabel nameLabel = new JLabel("<html><b>" + name + "</b></html>");
-        panel.add(nameLabel, BorderLayout.NORTH);
+        // Toggle action
+        toggleButton.setSelected(true);
+        toggleButton.addActionListener(e -> {
+            JPanel taskListPanel = (JPanel) parentBossPanel.getClientProperty("taskListPanel");
+            boolean expanded = toggleButton.isSelected();
+            toggleButton.setText(expanded ? "▼" : "►");
 
-        JLabel infoLabel = new JLabel(String.format(
-                "<html><font color='gray'>%s • %s</font></html>", difficulty, points));
-        panel.add(infoLabel, BorderLayout.SOUTH);
+            if (taskListPanel != null)
+            {
+                taskListPanel.setVisible(expanded);
+                taskListPanel.revalidate();
+                taskListPanel.repaint();
+            }
+        });
 
-        return panel;
+        return headerPanel;
     }
 
     private void showError(String message)
@@ -162,4 +183,3 @@ public class CombatAchievementPanel extends PluginPanel
         errorPanel.setVisible(false);
     }
 }
-
