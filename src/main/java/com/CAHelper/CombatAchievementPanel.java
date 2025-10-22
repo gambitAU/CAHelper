@@ -57,9 +57,9 @@ public class CombatAchievementPanel extends PluginPanel
         socialPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
         socialPanel.setBorder(new EmptyBorder(5, 5, 0, 5));
 
-        JButton discordBtn = createSocialButton("Discord", "https://discord.gg/yourlink");
-        JButton githubBtn = createSocialButton("GitHub", "https://github.com/yourusername/CAHelper");
-        JButton kofiBtn = createSocialButton("Ko-fi", "https://ko-fi.com/yourname");
+        JButton discordBtn = createSocialButton("Discord", "https://discord.gg/cvD4er93f7");
+        JButton githubBtn = createSocialButton("GitHub", "https://github.com/gambitAU/CAHelper");
+        JButton kofiBtn = createSocialButton("Ko-fi", "https://ko-fi.com/gambitau");
 
         socialPanel.add(discordBtn);
         socialPanel.add(githubBtn);
