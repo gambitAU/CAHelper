@@ -13,13 +13,15 @@ repositories {
     mavenCentral()
 }
 
-def runeLiteVersion = 'latest.release' // Updated to use the latest release instead of a specific version
+def runeLiteVersion = '1.11.21' // Updated to use the latest release instead of a specific version
 
 dependencies {
     compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
 
     compileOnly 'org.projectlombok:lombok:1.18.30'
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    implementation 'org.jsoup:jsoup:1.17.2'
 
     testImplementation 'junit:junit:4.12'
     testImplementation group: 'net.runelite', name: 'client', version: runeLiteVersion

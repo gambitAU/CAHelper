@@ -1,6 +1,8 @@
 package com.CAHelper;
 
 import lombok.extern.slf4j.Slf4j;
+
+import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -9,155 +11,74 @@ import java.util.stream.Collectors;
 @Singleton
 public class RoutingAlgorithm
 {
-    private final WikiDataLoader wikiDataLoader;
-    private final List<CombatAchievement> allAchievements;
+    private final CombatAchievementEnrichmentService enrichmentService;
+    private CAHelperConfig config;
 
-    // Injected constructor so wikiDataLoader is available
-    public RoutingAlgorithm(WikiDataLoader wikiDataLoader)
+    @Inject
+    public RoutingAlgorithm(CombatAchievementEnrichmentService enrichmentService)
     {
-        this.wikiDataLoader = wikiDataLoader;
-        this.allAchievements = wikiDataLoader.loadAllAchievements();
+        this.enrichmentService = enrichmentService;
     }
 
-    /**
-     * Generates a routing recommendation based on player progress
-     * @param progress Player progress, including completed achievements
-     * @return Ordered list of boss recommendations
-     */
-    public List<BossRecommendation> getRecommendations(WikiSyncService.PlayerProgress progress)
+    public void setConfig(CAHelperConfig config)
     {
-        return generateRoute(progress.getCompletedIds(), 5);
+        this.config = config;
     }
 
-    /**
-     * Generates a list of boss recommendations based on the player's completed achievements
-     * @param completedIds List of achievement IDs the player has completed
-     * @param maxSuggestions Maximum number of boss groups to suggest
-     * @return List of recommended boss tasks with their details
-     */
-    public List<BossRecommendation> generateRoute(List<Integer> completedIds, int maxSuggestions)
+    public enum TaskType
     {
-        // Filter to only available (incomplete) achievements
-        List<CombatAchievement> availableAchievements = allAchievements.stream()
-                .filter(ca -> !completedIds.contains(ca.getId())) // Not completed by the player
-                .filter(ca -> hasPrerequisites(ca, completedIds)) // Player meets prerequisites
-                .collect(Collectors.toList());
+        KILLCOUNT("Kill Count"),
+        MECHANICAL("Mechanical"),
+        PERFECTION("Perfection"),
+        RESTRICTION("Restriction"),
+        STAMINA("Stamina"),
+        SPEED("Speed"),
+        FLAWLESS("Flawless"),
+        GROUPSIZE("Group Size");
 
-        // Group achievements by boss
-        Map<String, List<CombatAchievement>> bossGroups = availableAchievements.stream()
-                .collect(Collectors.groupingBy(CombatAchievement::getBoss));
+        private final String wikiName;
 
-        // Calculate scores for each boss
-        List<BossRecommendation> recommendations = new ArrayList<>();
-
-        for (Map.Entry<String, List<CombatAchievement>> entry : bossGroups.entrySet())
+        TaskType(String wikiName)
         {
-            String boss = entry.getKey();
-            List<CombatAchievement> tasks = entry.getValue();
-
-            // Calculate aggregate completion rate (average of all tasks)
-            double avgCompletionRate = tasks.stream()
-                    .mapToDouble(CombatAchievement::getCompletionRate)
-                    .average()
-                    .orElse(0.0);
-
-            // Calculate total points available
-            int totalPoints = tasks.stream()
-                    .mapToInt(ca -> ca.getDifficulty().getPoints())
-                    .sum();
-
-            // Sort tasks by completion rate (highest first)
-            List<CombatAchievement> sortedTasks = tasks.stream()
-                    .sorted(Comparator.comparingDouble(CombatAchievement::getCompletionRate).reversed())
-                    .collect(Collectors.toList());
-
-            // Calculate efficiency score
-            double efficiencyScore = calculateEfficiencyScore(
-                    avgCompletionRate,
-                    tasks.size(),
-                    totalPoints,
-                    sortedTasks
-            );
-
-            recommendations.add(new BossRecommendation(
-                    boss,
-                    sortedTasks,
-                    avgCompletionRate,
-                    totalPoints,
-                    efficiencyScore
-            ));
+            this.wikiName = wikiName;
         }
 
-        // Sort by efficiency score (highest first)
-        recommendations.sort(Comparator.comparingDouble(BossRecommendation::getEfficiencyScore).reversed());
-
-        // Return top N recommendations
-        return recommendations.stream()
-                .limit(maxSuggestions)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Calculates efficiency score for routing priority
-     * Formula weights:
-     * - Average completion rate (60% weight) - easier tasks first
-     * - Number of tasks (25% weight) - more tasks = more efficient
-     * - Total points (15% weight) - higher rewards are nice
-     */
-    private double calculateEfficiencyScore(
-            double avgCompletionRate,
-            int taskCount,
-            int totalPoints,
-            List<CombatAchievement> tasks)
-    {
-        // Normalize values to 0-100 scale
-        double completionScore = avgCompletionRate; // Already 0-100
-        double taskCountScore = Math.min(taskCount * 10, 100); // Cap at 10 tasks
-        double pointsScore = Math.min(totalPoints * 2, 100); // Rough normalization
-
-        // Bonus for having multiple high-completion tasks (e.g., Barrows scenario)
-        double clusterBonus = 0;
-        long highCompletionTasks = tasks.stream()
-                .filter(ca -> ca.getCompletionRate() > 50)
-                .count();
-
-        if (highCompletionTasks >= 3)
+        public String getWikiName()
         {
-            clusterBonus = 15; // 15% bonus for 3+ easy tasks
+            return wikiName;
         }
 
-        // Weighted score
-        return (completionScore * 0.60) +
-                (taskCountScore * 0.25) +
-                (pointsScore * 0.15) +
-                clusterBonus;
-    }
-
-    /**
-     * Check if player has completed all prerequisites for a task
-     */
-    private boolean hasPrerequisites(CombatAchievement ca, List<Integer> completedIds)
-    {
-        if (ca.getPrerequisiteIds() == null || ca.getPrerequisiteIds().isEmpty())
+        public static TaskType fromWikiDifficulty(String difficultyString)
         {
-            return true;
-        }
+            if (difficultyString == null)
+            {
+                return KILLCOUNT;
+            }
 
-        return completedIds.containsAll(ca.getPrerequisiteIds());
+            String normalized = difficultyString.toLowerCase();
+
+            for (TaskType type : TaskType.values())
+            {
+                if (normalized.startsWith(type.getWikiName().toLowerCase()))
+                {
+                    return type;
+                }
+            }
+
+            return KILLCOUNT;
+        }
     }
 
-    /**
-     * Combat Achievement data model
-     */
     @lombok.Value
     public static class CombatAchievement
     {
         int id;
         String name;
-        String description;
+        String monster;
         Difficulty difficulty;
-        double completionRate; // Percentage (0-100)
-        String boss; // Boss/Monster name
+        TaskType type;
+        double completionRate;
+        String description;
         List<Integer> prerequisiteIds;
 
         public int getPoints()
@@ -166,44 +87,6 @@ public class RoutingAlgorithm
         }
     }
 
-    /**
-     * Boss recommendation with ranked tasks
-     */
-    @lombok.Value
-    public static class BossRecommendation
-    {
-        String bossName;
-        List<CombatAchievement> availableTasks;
-        double avgCompletionRate;
-        int totalPoints;
-        double efficiencyScore;
-
-        public String getDisplaySummary()
-        {
-            return String.format(
-                    "%s - %d tasks (%.1f%% avg completion) - %d points - Score: %.1f",
-                    bossName,
-                    availableTasks.size(),
-                    avgCompletionRate,
-                    totalPoints,
-                    efficiencyScore
-            );
-        }
-
-        /**
-         * Get the top N easiest tasks for this boss
-         */
-        public List<CombatAchievement> getTopEasiestTasks(int count)
-        {
-            return availableTasks.stream()
-                    .limit(count)
-                    .collect(Collectors.toList());
-        }
-    }
-
-    /**
-     * Task difficulty tiers
-     */
     public enum Difficulty
     {
         EASY(1),
@@ -223,6 +106,325 @@ public class RoutingAlgorithm
         public int getPoints()
         {
             return points;
+        }
+    }
+
+    @lombok.Value
+    public static class BossRecommendation
+    {
+        String bossName;
+        int completedCount;
+        int totalCount;
+        double completionPercentage;
+        List<CombatAchievement> availableTasks;
+    }
+
+    /**
+     * Get boss recommendations.
+     * Sorting: "Low-Hanging Fruit" - recommends bosses with easiest incomplete tasks
+     * or simple difficulty sorting if smart routing is disabled.
+     */
+    public List<BossRecommendation> getRecommendations(int limit)
+    {
+        log.info("=== getRecommendations() called ===");
+
+        List<CombatAchievement> allTasks = enrichmentService.getAllEnrichedTasks();
+        log.info("Got {} total enriched tasks", allTasks.size());
+
+        // Apply all filters
+        if (config != null)
+        {
+            allTasks = filterByDifficulty(allTasks);
+            log.info("After difficulty filtering: {} tasks", allTasks.size());
+
+            if (config.soloContentOnly())
+            {
+                allTasks = filterSoloContent(allTasks);
+                log.info("After solo content filtering: {} tasks", allTasks.size());
+            }
+
+            if (config.hideWildernessContent())
+            {
+                allTasks = filterWildernessContent(allTasks);
+                log.info("After wilderness filtering: {} tasks", allTasks.size());
+            }
+        }
+
+        if (allTasks.isEmpty())
+        {
+            log.info("No tasks found after filtering");
+            return Collections.emptyList();
+        }
+
+        // Group by boss
+        Map<String, List<CombatAchievement>> tasksByBoss = allTasks.stream()
+                .collect(Collectors.groupingBy(CombatAchievement::getMonster));
+
+        log.info("Grouped into {} bosses", tasksByBoss.size());
+
+        // Create recommendations
+        List<BossRecommendation> recommendations = new ArrayList<>();
+
+        for (Map.Entry<String, List<CombatAchievement>> entry : tasksByBoss.entrySet())
+        {
+            String bossName = entry.getKey();
+            List<CombatAchievement> tasks = entry.getValue();
+
+            int totalTasks = tasks.size();
+            int completedTasks = (int) tasks.stream()
+                    .filter(t -> t.getCompletionRate() >= 100)
+                    .count();
+
+            List<CombatAchievement> incompleteTasks = tasks.stream()
+                    .filter(t -> t.getCompletionRate() < 100)
+                    .collect(Collectors.toList());
+
+            double score;
+            if (incompleteTasks.isEmpty())
+            {
+                score = -1.0; // Fully complete - sort to bottom
+            }
+            else
+            {
+                score = calculateLowHangingFruitScore(incompleteTasks);
+            }
+
+            recommendations.add(new BossRecommendation(
+                    bossName,
+                    completedTasks,
+                    totalTasks,
+                    score,
+                    tasks
+            ));
+        }
+
+        // Sort based on config
+        if (config != null && config.useSmartRouting())
+        {
+            // Smart routing - low-hanging fruit first
+            recommendations.sort(Comparator
+                    .comparingDouble(BossRecommendation::getCompletionPercentage)
+                    .reversed());
+
+            log.info("Using SMART routing (low-hanging fruit)");
+        }
+        else
+        {
+            // Simple mode - sort by easiest difficulty
+            recommendations.sort(Comparator
+                    .comparing((BossRecommendation r) -> {
+                        return r.getAvailableTasks().stream()
+                                .filter(t -> t.getCompletionRate() < 100)
+                                .map(CombatAchievement::getDifficulty)
+                                .min(Comparator.naturalOrder())
+                                .orElse(Difficulty.GRANDMASTER);
+                    })
+                    .thenComparing(BossRecommendation::getBossName));
+
+            log.info("Using SIMPLE routing (difficulty only)");
+        }
+
+        log.info("=== Top 10 Recommendations ===");
+        recommendations.stream()
+                .limit(10)
+                .forEach(rec -> {
+                    if (rec.getCompletionPercentage() < 0)
+                    {
+                        log.info("  {}: COMPLETE ({}/{})",
+                                rec.getBossName(), rec.getCompletedCount(), rec.getTotalCount());
+                    }
+                    else
+                    {
+                        log.info("  {}: {}/{} (score: {:.1f})",
+                                rec.getBossName(), rec.getCompletedCount(),
+                                rec.getTotalCount(), rec.getCompletionPercentage());
+                    }
+                });
+
+        if (limit > 0 && limit < recommendations.size())
+        {
+            recommendations = recommendations.subList(0, limit);
+        }
+
+        return recommendations;
+    }
+
+    /**
+     * Score based on easiest 1-3 incomplete tasks.
+     * Promotes "do easy tasks across many bosses" strategy.
+     */
+    private double calculateLowHangingFruitScore(List<CombatAchievement> incompleteTasks)
+    {
+        if (incompleteTasks.isEmpty())
+        {
+            return 0.0;
+        }
+
+        // Sort by difficulty, then completion %
+        List<CombatAchievement> sorted = incompleteTasks.stream()
+                .sorted(Comparator
+                        .comparingInt((CombatAchievement t) -> t.getDifficulty().ordinal())
+                        .thenComparing(Comparator.comparingDouble(CombatAchievement::getCompletionRate).reversed()))
+                .collect(Collectors.toList());
+
+        // Take easiest 1-3 tasks
+        int numTasksToConsider = Math.min(3, sorted.size());
+        List<CombatAchievement> easiestTasks = sorted.subList(0, numTasksToConsider);
+
+        double totalScore = 0.0;
+
+        for (CombatAchievement task : easiestTasks)
+        {
+            double difficultyBonus = getDifficultyBonus(task.getDifficulty());
+            double completionBonus = task.getCompletionRate();
+
+            // 60% difficulty, 40% completion
+            double taskScore = (difficultyBonus * 0.6) + (completionBonus * 0.4);
+            totalScore += taskScore;
+        }
+
+        return totalScore / numTasksToConsider;
+    }
+
+    private double getDifficultyBonus(Difficulty difficulty)
+    {
+        switch (difficulty)
+        {
+            case EASY: return 100.0;
+            case MEDIUM: return 80.0;
+            case HARD: return 60.0;
+            case ELITE: return 40.0;
+            case MASTER: return 20.0;
+            case GRANDMASTER: return 0.0;
+            default: return 0.0;
+        }
+    }
+
+    private List<CombatAchievement> filterByDifficulty(List<CombatAchievement> tasks)
+    {
+        CAHelperConfig.Difficulty minDiff = config.minDifficulty();
+        CAHelperConfig.Difficulty maxDiff = config.maxDifficulty();
+
+        return tasks.stream()
+                .filter(task -> {
+                    Difficulty taskDiff = task.getDifficulty();
+                    int taskOrdinal = taskDiff.ordinal();
+                    int minOrdinal = convertConfigDifficulty(minDiff).ordinal();
+                    int maxOrdinal = convertConfigDifficulty(maxDiff).ordinal();
+
+                    return taskOrdinal >= minOrdinal && taskOrdinal <= maxOrdinal;
+                })
+                .collect(Collectors.toList());
+    }
+
+    private List<CombatAchievement> filterSoloContent(List<CombatAchievement> tasks)
+    {
+        List<CombatAchievement> soloTasks = tasks.stream()
+                .filter(task -> !isGroupContent(task))
+                .collect(Collectors.toList());
+
+        int filtered = tasks.size() - soloTasks.size();
+        log.info("Filtered {} group tasks, {} solo remaining", filtered, soloTasks.size());
+
+        return soloTasks;
+    }
+
+    private List<CombatAchievement> filterWildernessContent(List<CombatAchievement> tasks)
+    {
+        List<CombatAchievement> safeTasks = tasks.stream()
+                .filter(task -> !isWildernessContent(task))
+                .collect(Collectors.toList());
+
+        int filtered = tasks.size() - safeTasks.size();
+        log.info("Filtered {} wilderness tasks, {} safe remaining", filtered, safeTasks.size());
+
+        return safeTasks;
+    }
+
+    private boolean isGroupContent(CombatAchievement task)
+    {
+        if (task.getType() == TaskType.GROUPSIZE)
+        {
+            return true;
+        }
+
+        String name = task.getName().toLowerCase();
+        String description = task.getDescription() != null ? task.getDescription().toLowerCase() : "";
+
+        String[] namePatterns = {
+                "duo", "trio", "4-scale", "5-scale", "6-scale", "7-scale", "8-scale",
+                "4-man", "5-man", "4man", "5man", "team of", "group of", "party of"
+        };
+
+        for (String pattern : namePatterns)
+        {
+            if (name.contains(pattern))
+            {
+                return true;
+            }
+        }
+
+        String[] descPatterns = {
+                "in a group of", "in a team of", "in a party of", "with a team of",
+                "with a group of", "with a party of", "as a team", "as a group",
+                "in a duo", "in a trio", "with at least 2", "with at least 3",
+                "with at least 4", "with at least 5", "with 2 or more",
+                "with 3 or more", "with 4 or more", "with 5 or more",
+                "alongside", "other players"
+        };
+
+        for (String pattern : descPatterns)
+        {
+            if (description.contains(pattern))
+            {
+                return true;
+            }
+        }
+
+        // Exception: explicit solo
+        if (name.contains("solo") || description.contains("solo"))
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private boolean isWildernessContent(CombatAchievement task)
+    {
+        String name = task.getName().toLowerCase();
+        String monster = task.getMonster().toLowerCase();
+        String desc = task.getDescription() != null ? task.getDescription().toLowerCase() : "";
+
+        String[] wildyIndicators = {
+                "wilderness", "wildy", "callisto", "venenatis", "vet'ion", "vetion",
+                "artio", "spindel", "calvar'ion", "calvarion", "scorpia",
+                "chaos elemental", "crazy archaeologist", "chaos fanatic",
+                "king black dragon", "kbd", "revenant", "lava dragon"
+        };
+
+        for (String indicator : wildyIndicators)
+        {
+            if (name.contains(indicator) || monster.contains(indicator) || desc.contains(indicator))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private Difficulty convertConfigDifficulty(CAHelperConfig.Difficulty configDiff)
+    {
+        switch (configDiff)
+        {
+            case EASY: return Difficulty.EASY;
+            case MEDIUM: return Difficulty.MEDIUM;
+            case HARD: return Difficulty.HARD;
+            case ELITE: return Difficulty.ELITE;
+            case MASTER: return Difficulty.MASTER;
+            case GRANDMASTER: return Difficulty.GRANDMASTER;
+            default: return Difficulty.EASY;
         }
     }
 }

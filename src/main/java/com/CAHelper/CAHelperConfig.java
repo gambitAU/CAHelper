@@ -8,32 +8,21 @@ import net.runelite.client.config.ConfigItem;
 public interface CAHelperConfig extends Config
 {
     @ConfigItem(
-            keyName = "useWikiSync",
-            name = "Use Wiki Sync",
-            description = "Fetch progress from OSRS Wiki (requires you to sync in-game)",
+            keyName = "useSmartRouting",
+            name = "Smart Routing",
+            description = "Routes bosses by easiest incomplete tasks. Disable to sort by difficulty only.",
             position = 1
     )
-    default boolean useWikiSync()
+    default boolean useSmartRouting()
     {
         return true;
-    }
-
-    @ConfigItem(
-            keyName = "routingPriority",
-            name = "Routing Priority",
-            description = "How to prioritize suggested tasks",
-            position = 2
-    )
-    default RoutingPriority routingPriority()
-    {
-        return RoutingPriority.LOCATION_CLUSTER;
     }
 
     @ConfigItem(
             keyName = "minDifficulty",
             name = "Minimum Difficulty",
             description = "Only show tasks at or above this difficulty",
-            position = 3
+            position = 2
     )
     default Difficulty minDifficulty()
     {
@@ -44,7 +33,7 @@ public interface CAHelperConfig extends Config
             keyName = "maxDifficulty",
             name = "Maximum Difficulty",
             description = "Only show tasks at or below this difficulty",
-            position = 4
+            position = 3
     )
     default Difficulty maxDifficulty()
     {
@@ -52,22 +41,25 @@ public interface CAHelperConfig extends Config
     }
 
     @ConfigItem(
-            keyName = "autoRefresh",
-            name = "Auto Refresh Minutes",
-            description = "Automatically refresh progress every X minutes (0 = disabled)",
-            position = 5
+            keyName = "soloContentOnly",
+            name = "Solo Content Only",
+            description = "Only show tasks that can be completed solo (filters out duo, trio, group tasks)",
+            position = 4
     )
-    default int autoRefreshMinutes()
+    default boolean soloContentOnly()
     {
-        return 10;
+        return false;
     }
 
-    enum RoutingPriority
+    @ConfigItem(
+            keyName = "hideWildernessContent",
+            name = "Hide Wilderness Tasks",
+            description = "Filter out all wilderness-related tasks (recommended for Hardcore Ironmen)",
+            position = 5
+    )
+    default boolean hideWildernessContent()
     {
-        LOCATION_CLUSTER,  // Group by boss/location
-        DIFFICULTY,        // Easiest first
-        POINTS,           // Highest point value first
-        GEAR_SIMILARITY   // Similar gear requirements
+        return false;
     }
 
     enum Difficulty
