@@ -400,10 +400,9 @@ public class CAHelperPlugin extends Plugin
             return;
         }
 
-        // Find first incomplete task (considering manual completions)
         currentTask = boss.getAvailableTasks().stream()
-                .filter(task -> task.getCompletionRate() < 100) // Not actually complete
-                .filter(task -> !manualCompletionManager.isManuallyCompleted(task.getId())) // Not manually skipped
+                .filter(task -> task.getCompletionRate() < 100)
+                .filter(task -> !manualCompletionManager.isManuallyCompleted(task.getId()))
                 .findFirst()
                 .orElse(null);
 

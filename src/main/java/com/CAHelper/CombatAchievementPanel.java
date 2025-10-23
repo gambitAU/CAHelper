@@ -196,7 +196,6 @@ public class CombatAchievementPanel extends PluginPanel
                 bossList.add(bossRow);
             }
 
-            bossList.add(Box.createVerticalGlue());
             bossList.revalidate();
         }
         catch (Exception e)
@@ -424,13 +423,27 @@ public class CombatAchievementPanel extends PluginPanel
             }
         }
 
-
+        // position wrapper to the north
         contentPanel.add(wrapperPanel, BorderLayout.NORTH);
 
         bossDetail.add(contentPanel, BorderLayout.CENTER);
 
+        cardPanel.setPreferredSize(null);
         cardLayout.show(cardPanel, "detail");
         bossDetail.revalidate();
+        SwingUtilities.invokeLater(() -> {
+            Container parent = getParent();
+            while (parent != null) {
+                if (parent instanceof JScrollPane) {
+                    JScrollPane scrollPane = (JScrollPane) parent;
+                    scrollPane.getViewport().setViewPosition(new Point(0, 0));
+                    scrollPane.revalidate();
+                    scrollPane.repaint();
+                    break;
+                }
+                parent = parent.getParent();
+            }
+        });
     }
 
     private JPanel createTaskDetailPanel(RoutingAlgorithm.CombatAchievement task, boolean isCompleted)
