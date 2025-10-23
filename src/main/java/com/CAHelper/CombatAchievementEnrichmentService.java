@@ -50,6 +50,13 @@ public class CombatAchievementEnrichmentService
         if (wikiDataLoaded)
         {
             log.info("Wiki data already loaded");
+
+            if (panelRefreshCallback != null)
+            {
+                log.info("Triggering panel refresh callback (data already loaded)");
+                clientThread.invokeLater(panelRefreshCallback);
+            }
+
             return;
         }
 

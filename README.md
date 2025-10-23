@@ -1,1 +1,4 @@
-The CA Helper plugin exists to help people who want to reach a combat tier but are overwhelmed where to start, this plugin makes use of the wikisync function so make sure that you have the wikisync plugin active as well. 
+The CA Helper plugin exists to help people who want to reach a combat tier but are overwhelmed where to start.
+Routing algorithm recommends bosses with the highest aggregate completion % of tasks incomplete.
+Solo content option removes all tasks that require more than one person to complete. 
+Hardcore ironman option removes all wilderness tasks

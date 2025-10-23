@@ -743,4 +743,5 @@ public class CombatAchievementService
             return cleaned.trim();
         }
     }
+
 }

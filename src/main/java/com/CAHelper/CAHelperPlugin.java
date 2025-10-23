@@ -53,22 +53,23 @@ public class CAHelperPlugin extends Plugin
     private CombatAchievementPanel panel;
     private NavigationButton navButton;
     private boolean hasLoadedTasks = false;
+    private long lastPanelRefresh = 0;
+    private static final long PANEL_REFRESH_COOLDOWN_MS = 500; // Max 1 refresh per 500ms
+    private int gameTicksSinceLogin = 0;
 
     @Override
     protected void startUp() throws Exception
     {
-        log.info("CA Helper started!");
+        log.info("=== CA Helper startUp() called ===");
+        log.info("hasLoadedTasks = {}", hasLoadedTasks);
 
-        // Setup panel ONLY - do NOT initialize service here
         panel = new CombatAchievementPanel(this, combatAchievementService, routingAlgorithm, clientThread);
 
-        // Set panel refresh callback so wiki data can auto-refresh it
         enrichmentService.setPanelRefreshCallback(() -> {
             log.info("Panel refresh callback triggered!");
             panel.loadRecommendations();
         });
 
-        // Set config on routing algorithm for filtering
         routingAlgorithm.setConfig(config);
 
         navButton = NavigationButton.builder()
@@ -78,31 +79,43 @@ public class CAHelperPlugin extends Plugin
                 .build();
         clientToolbar.addNavigation(navButton);
 
-        // DO NOT initialize service here - it will happen in onGameTick
+        log.info("=== CA Helper startUp() complete ===");
     }
 
     @Subscribe
     public void onGameStateChanged(GameStateChanged event)
     {
+        log.info("=== GameStateChanged: {} → hasLoadedTasks={} ===", event.getGameState(), hasLoadedTasks);
+
         if (event.getGameState() == GameState.LOGGED_IN)
         {
-            // Reset flag so we reinitialize on login
-            hasLoadedTasks = false;
-        }
-        else if (event.getGameState() == GameState.HOPPING ||
-                event.getGameState() == GameState.LOGGING_IN)
-        {
-            hasLoadedTasks = false;
+            gameTicksSinceLogin = 0; // reset counter
+
+            if (hasLoadedTasks)
+            {
+                log.info("Already loaded - waiting for varps to transmit before refresh");
+                // waiting for game ticks to refresh
+            }
         }
     }
+
 
     @Subscribe
     public void onGameTick(GameTick event)
     {
-        // Load tasks ONLY after login on the first game tick
-        // This ensures varps are transmitted and we're on client thread
         if (client.getGameState() == GameState.LOGGED_IN && !hasLoadedTasks)
         {
+            // check service has data
+            if (combatAchievementService.isInitialized() && combatAchievementService.getTotalTaskCount() > 0)
+            {
+                log.info("Service already initialized with {} tasks - skipping reload",
+                        combatAchievementService.getTotalTaskCount());
+                hasLoadedTasks = true;
+                return; // wait for varps before refresh
+            }
+
+            log.info("=== TRIGGERING FULL RELOAD (service not initialized) ===");
+
             try
             {
                 log.info("Loading Combat Achievement tasks from cache...");
@@ -112,11 +125,10 @@ public class CAHelperPlugin extends Plugin
                 int completed = combatAchievementService.getCompletedTaskCount();
                 log.info("Loaded {} tasks, {} completed", total, completed);
 
-                // Load wiki data in background (will auto-refresh panel when done)
                 log.info("Loading wiki data in background...");
                 enrichmentService.loadWikiData();
 
-                log.info("Panel will auto-refresh when wiki data finishes loading (~3 seconds)");
+                log.info("Panel will auto-refresh when wiki data finishes loading");
 
                 hasLoadedTasks = true;
             }
@@ -125,21 +137,41 @@ public class CAHelperPlugin extends Plugin
                 log.error("Failed to load CA tasks", e);
             }
         }
+
+        // on subsequent logins, wait 3 ticks for varps to transmit, then refresh
+        if (hasLoadedTasks && gameTicksSinceLogin > 0 && gameTicksSinceLogin <= 3)
+        {
+            gameTicksSinceLogin++;
+
+            if (gameTicksSinceLogin == 3)
+            {
+                log.info("5 ticks passed - varps should be loaded, refreshing panel");
+                refreshPanelThrottled();
+            }
+        }
+        else if (hasLoadedTasks && gameTicksSinceLogin == 0)
+        {
+            gameTicksSinceLogin = 1; //
+        }
     }
+
 
     @Subscribe
     public void onVarbitChanged(VarbitChanged event)
     {
-        // Only process if initialized
-        if (!combatAchievementService.isInitialized())
+        if (!combatAchievementService.isInitialized() || !hasLoadedTasks)
         {
             return;
         }
 
-        // Check if it's one of the CA completion varps
+        // skip varp processing during first 3 ticks
+        if (gameTicksSinceLogin > 0 && gameTicksSinceLogin < 3)
+        {
+            return;
+        }
+
         int changedVarp = event.getVarpId();
 
-        // CA varps (from VARP_IDS array in CombatAchievementService)
         int[] CA_VARPS = {3116, 3117, 3118, 3119, 3120, 3121, 3122, 3123, 3124, 3125,
                 3126, 3127, 3128, 3387, 3718, 3773, 3774, 4204, 4496, 4721};
 
@@ -147,20 +179,31 @@ public class CAHelperPlugin extends Plugin
         {
             if (changedVarp == varpId)
             {
-                log.info("Combat Achievement varp {} changed - refreshing panel", changedVarp);
-
-                // Refresh panel on client thread after a short delay
-                // (gives time for all related varps to update)
-                clientThread.invokeLater(() -> {
-                    if (panel != null)
-                    {
-                        panel.loadRecommendations();
-                    }
-                });
-
+                refreshPanelThrottled();
                 break;
             }
         }
+    }
+
+    private void refreshPanelThrottled()
+    {
+        long now = System.currentTimeMillis();
+        long timeSinceLastRefresh = now - lastPanelRefresh;
+
+        if (timeSinceLastRefresh < PANEL_REFRESH_COOLDOWN_MS)
+        {
+            return;
+        }
+
+        lastPanelRefresh = now;
+        log.info("Refreshing panel (throttled)");
+
+        clientThread.invokeLater(() -> {
+            if (panel != null)
+            {
+                panel.loadRecommendations();
+            }
+        });
     }
 
     @Subscribe
@@ -171,14 +214,11 @@ public class CAHelperPlugin extends Plugin
             return;
         }
 
-        // Config changed - refresh routing algorithm and panel
         log.info("Config changed: {} = {}", event.getKey(), event.getNewValue());
 
         clientThread.invokeLater(() -> {
-            // Update routing algorithm with new config
             routingAlgorithm.setConfig(config);
 
-            // Refresh panel
             if (panel != null)
             {
                 log.info("Refreshing panel due to config change");
@@ -201,6 +241,7 @@ public class CAHelperPlugin extends Plugin
             }
 
             log.info("=== COMBAT ACHIEVEMENT DEBUG ===");
+            log.info("hasLoadedTasks: {}", hasLoadedTasks);
             log.info("Total tasks: {}", combatAchievementService.getTotalTaskCount());
             log.info("Completed tasks: {}", combatAchievementService.getCompletedTaskCount());
             log.info("Incomplete tasks: {}", combatAchievementService.getIncompleteTasks().size());
@@ -210,18 +251,15 @@ public class CAHelperPlugin extends Plugin
             log.info("Points to next tier: {}", combatAchievementService.getPointsToNextTier());
             log.info("Wiki data loaded: {}", enrichmentService.isWikiDataLoaded());
 
-            // Debug config
             log.info("=== Config Settings ===");
             log.info("Min Difficulty: {}", config.minDifficulty());
             log.info("Max Difficulty: {}", config.maxDifficulty());
             log.info("Solo Content Only: {}", config.soloContentOnly());
 
-            // Debug points breakdown by difficulty
             log.info("=== Points Breakdown by Difficulty ===");
             var breakdown = combatAchievementService.getPointsBreakdown();
             breakdown.forEach((diff, pts) -> log.info("  {}: {} points", diff, pts));
 
-            // Debug what panel is actually showing
             log.info("=== Testing Panel Data ===");
             var recs = routingAlgorithm.getRecommendations(10);
             log.info("Panel would show {} bosses:", recs.size());
@@ -234,16 +272,19 @@ public class CAHelperPlugin extends Plugin
         }
         else if (command.equals("careload"))
         {
-            log.info("Reloading Combat Achievement service...");
+            log.info("=== Manual reload requested ===");
+            log.info("Resetting hasLoadedTasks to false");
+            hasLoadedTasks = false;
+
             combatAchievementService.reset();
             combatAchievementService.initialize();
+            enrichmentService.clearCache();
             enrichmentService.loadWikiData();
 
-            // Wait a bit for wiki to load, then refresh panel
             new Thread(() -> {
                 try
                 {
-                    Thread.sleep(3000); // Wait 3 seconds
+                    Thread.sleep(3000);
                     log.info("Refreshing panel after wiki load...");
                     clientThread.invokeLater(() -> panel.loadRecommendations());
                 }
@@ -253,14 +294,13 @@ public class CAHelperPlugin extends Plugin
                 }
             }).start();
 
-            log.info("Reload in progress (will refresh panel in 3 seconds)...");
+            log.info("Reload in progress (will refresh panel in a moment)...");
         }
         else if (command.equals("cawikimatch"))
         {
             System.out.println("\n=== WIKI MATCHING DEBUG ===");
             System.out.println("Wiki loaded: " + enrichmentService.isWikiDataLoaded());
 
-            // Test with first 10 incomplete tasks
             var cacheTasks = combatAchievementService.getIncompleteTasks();
             System.out.println("Testing " + cacheTasks.size() + " cache tasks\n");
 
@@ -269,14 +309,12 @@ public class CAHelperPlugin extends Plugin
                 System.out.println("  Task: '" + task.getName() + "' -> Monster: '" + task.getMonster() + "'");
             });
 
-            // Now test enriched
             System.out.println("\nAFTER ENRICHMENT (with wiki):");
             var enriched = enrichmentService.getEnrichedIncompleteTasks();
             enriched.stream().limit(10).forEach(task -> {
                 System.out.println("  Task: '" + task.getName() + "' -> Monster: '" + task.getMonster() + "'");
             });
 
-            // Show what panel will display
             System.out.println("\nPANEL WILL SHOW THESE BOSSES:");
             var recs = routingAlgorithm.getRecommendations(15);
             recs.stream().limit(15).forEach(rec -> {
@@ -286,35 +324,17 @@ public class CAHelperPlugin extends Plugin
 
             System.out.println("=== END WIKI MATCH DEBUG ===\n");
         }
-        else if (command.equals("cadoom"))
-        {
-            if (client.getGameState() != GameState.LOGGED_IN)
-            {
-                log.warn("Must be logged in to debug");
-                return;
-            }
-
-            log.info("=== CADOOM DEBUG START ===");
-            clientThread.invokeLater(() -> {
-                combatAchievementService.debugBossTasks("mokhaiotl");
-                combatAchievementService.debugBossTasks("doom");
-            });
-            log.info("=== CADOOM DEBUG END (results will appear above if applicable) ===");
-        }
         else if (command.equals("casolo"))
         {
             log.info("=== TESTING SOLO FILTER ===");
 
-            // Get all tasks
             var allTasks = enrichmentService.getAllEnrichedTasks();
             log.info("Total tasks: {}", allTasks.size());
 
-            // Test with solo filter OFF
             routingAlgorithm.setConfig(config);
             var allRecs = routingAlgorithm.getRecommendations(Integer.MAX_VALUE);
             log.info("With solo filter OFF: {} bosses", allRecs.size());
 
-            // Show sample group tasks that would be filtered
             log.info("\n=== Sample Group Content Tasks ===");
             allTasks.stream()
                     .filter(t -> t.getName().toLowerCase().contains("duo")
@@ -328,18 +348,10 @@ public class CAHelperPlugin extends Plugin
         }
     }
 
-    public void debugDoom()
-    {
-        clientThread.invokeLater(() -> {
-            combatAchievementService.debugBossTasks("mokhaiotl");
-            combatAchievementService.debugBossTasks("doom");
-        });
-    }
-
     @Override
     protected void shutDown() throws Exception
     {
-        log.info("CA Helper stopped!");
+        log.info("=== CA Helper shutDown() called ===");
 
         if (combatAchievementService != null)
         {
@@ -347,7 +359,9 @@ public class CAHelperPlugin extends Plugin
         }
 
         clientToolbar.removeNavigation(navButton);
-        hasLoadedTasks = false;
+        hasLoadedTasks = false; // Reset for next startup
+
+        log.info("=== CA Helper shutdown complete ===");
     }
 
     private BufferedImage getIcon()
