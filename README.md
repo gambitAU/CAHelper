@@ -1,1 +1,1 @@
-The CA Helper plugin exists to help people who want to reach a combat tier but are overwhelmed where to start. Shows bosses in either alphabetical order OR routes bosses by highest total completion % per boss. 
+The CA Helper plugin exists to help people who want to reach a combat tier but are overwhelmed where to start. Shows bosses by either easiest tasks OR routes bosses by highest total completion % per boss. 
