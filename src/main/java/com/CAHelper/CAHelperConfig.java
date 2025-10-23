@@ -61,6 +61,16 @@ public interface CAHelperConfig extends Config
     {
         return false;
     }
+    @ConfigItem(
+            keyName = "showOverlay",
+            name = "Show In-Game Overlay",
+            description = "Display current recommended task in-game",
+            position = 6
+    )
+    default boolean showOverlay()
+    {
+        return true;
+    }
 
     enum Difficulty
     {

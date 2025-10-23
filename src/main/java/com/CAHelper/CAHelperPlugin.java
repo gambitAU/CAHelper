@@ -16,6 +16,7 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ImageUtil;
 
 import javax.inject.Inject;
@@ -49,7 +50,14 @@ public class CAHelperPlugin extends Plugin
 
     @Inject
     private CombatAchievementEnrichmentService enrichmentService;
+    @Inject
+    private ManualCompletionManager manualCompletionManager;
 
+    @Inject
+    private OverlayManager overlayManager;
+
+    private CAHelperOverlay overlay;
+    private RoutingAlgorithm.CombatAchievement currentTask = null;
     private CombatAchievementPanel panel;
     private NavigationButton navButton;
     private boolean hasLoadedTasks = false;
@@ -62,6 +70,10 @@ public class CAHelperPlugin extends Plugin
     {
         log.info("=== CA Helper startUp() called ===");
         log.info("hasLoadedTasks = {}", hasLoadedTasks);
+        manualCompletionManager.initialize();
+        overlay = new CAHelperOverlay(this, config, manualCompletionManager);
+        overlayManager.add(overlay);
+
 
         panel = new CombatAchievementPanel(this, combatAchievementService, routingAlgorithm, clientThread);
 
@@ -360,7 +372,7 @@ public class CAHelperPlugin extends Plugin
 
         clientToolbar.removeNavigation(navButton);
         hasLoadedTasks = false; // Reset for next startup
-
+        overlayManager.remove(overlay);
         log.info("=== CA Helper shutdown complete ===");
     }
 
@@ -373,5 +385,32 @@ public class CAHelperPlugin extends Plugin
     CAHelperConfig provideConfig(ConfigManager configManager)
     {
         return configManager.getConfig(CAHelperConfig.class);
+    }
+    public RoutingAlgorithm.CombatAchievement getCurrentTask()
+    {
+        return currentTask;
+    }
+
+    // Method to set current task (called when boss detail opens)
+    public void setCurrentTask(RoutingAlgorithm.BossRecommendation boss)
+    {
+        if (boss == null)
+        {
+            currentTask = null;
+            return;
+        }
+
+        // Find first incomplete task (considering manual completions)
+        currentTask = boss.getAvailableTasks().stream()
+                .filter(task -> task.getCompletionRate() < 100) // Not actually complete
+                .filter(task -> !manualCompletionManager.isManuallyCompleted(task.getId())) // Not manually skipped
+                .findFirst()
+                .orElse(null);
+
+        log.info("Set current task: {}", currentTask != null ? currentTask.getName() : "none");
+    }
+    public ManualCompletionManager getManualCompletionManager()
+    {
+        return manualCompletionManager;
     }
 }

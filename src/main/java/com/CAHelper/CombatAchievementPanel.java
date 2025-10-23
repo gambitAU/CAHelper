@@ -424,7 +424,7 @@ public class CombatAchievementPanel extends PluginPanel
             }
         }
 
-        // Position wrapper to NORTH so it only takes space it needs
+
         contentPanel.add(wrapperPanel, BorderLayout.NORTH);
 
         bossDetail.add(contentPanel, BorderLayout.CENTER);
@@ -469,7 +469,23 @@ public class CombatAchievementPanel extends PluginPanel
         headerPanel.setLayout(new BorderLayout(5, 0));
         headerPanel.setBackground(bgColor);
         headerPanel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        if (!isCompleted)
+        {
+            JCheckBox skipCheckbox = new JCheckBox();
+            skipCheckbox.setSelected(plugin.getManualCompletionManager().isManuallyCompleted(task.getId()));
+            skipCheckbox.setBackground(bgColor);
+            skipCheckbox.setToolTipText("Skip this task");
+            skipCheckbox.setFocusPainted(false);
+            skipCheckbox.setPreferredSize(new Dimension(20, 20)); // Fixed size
 
+            skipCheckbox.addActionListener(e -> {
+                plugin.getManualCompletionManager().toggleManualCompletion(task.getId());
+                plugin.setCurrentTask(selectedBoss);
+                showBossDetail();
+            });
+
+            headerPanel.add(skipCheckbox, BorderLayout.WEST);
+        }
         // Task name with HTML wrapping
         JLabel nameLabel = new JLabel("<html>" + task.getName() + "</html>");
         nameLabel.setFont(FontManager.getRunescapeBoldFont());
