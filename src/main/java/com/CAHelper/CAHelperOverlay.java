@@ -31,8 +31,10 @@ public class CAHelperOverlay extends OverlayPanel
     @Override
     public Dimension render(Graphics2D graphics)
     {
+
         if (!config.showOverlay())
         {
+
             return null;
         }
 
@@ -40,8 +42,12 @@ public class CAHelperOverlay extends OverlayPanel
 
         if (currentTask == null)
         {
+
             return null;
         }
+
+
+
 
         // Title
         panelComponent.getChildren().add(TitleComponent.builder()
@@ -68,7 +74,7 @@ public class CAHelperOverlay extends OverlayPanel
         {
             panelComponent.getChildren().add(LineComponent.builder()
                     .left(currentTask.getDescription())
-                    .leftColor(Color.GRAY)
+                    .leftColor(Color.WHITE)
                     .build());
         }
 

@@ -388,15 +388,18 @@ public class CAHelperPlugin extends Plugin
     }
     public RoutingAlgorithm.CombatAchievement getCurrentTask()
     {
+
         return currentTask;
     }
 
     // Method to set current task (called when boss detail opens)
     public void setCurrentTask(RoutingAlgorithm.BossRecommendation boss)
     {
+
         if (boss == null)
         {
             currentTask = null;
+
             return;
         }
 
@@ -406,8 +409,8 @@ public class CAHelperPlugin extends Plugin
                 .findFirst()
                 .orElse(null);
 
-        log.info("Set current task: {}", currentTask != null ? currentTask.getName() : "none");
     }
+
     public ManualCompletionManager getManualCompletionManager()
     {
         return manualCompletionManager;

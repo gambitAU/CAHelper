@@ -444,6 +444,7 @@ public class CombatAchievementPanel extends PluginPanel
                 parent = parent.getParent();
             }
         });
+        plugin.setCurrentTask(selectedBoss);
     }
 
     private JPanel createTaskDetailPanel(RoutingAlgorithm.CombatAchievement task, boolean isCompleted)
